@@ -6,8 +6,7 @@ import { formatUnits } from "viem";
 import {
   MiniKit,
   VerificationLevel,
-  // 🟢 FIX 1: 'ISendTransactionPayload' ka naam badal kar 'SendTransactionPayload' kar diya
-  SendTransactionPayload, 
+  SendTransactionPayload, // Ensure ye updated name ho
   ISuccessResult, 
 } from "@worldcoin/minikit-js";
 
@@ -44,13 +43,14 @@ export default function ClaimSection() {
   });
 
   useEffect(() => {
-    if (MiniKit.isInstalled() && MiniKit.walletAddress) {
-      setAddress(MiniKit.walletAddress as `0x${string}`);
+    // 🟢 FIX: (MiniKit as any) lagaya taaki TS error na de
+    if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
+      setAddress((MiniKit as any).walletAddress as `0x${string}`);
       return;
     }
     const i = setInterval(() => {
-      if (MiniKit.isInstalled() && MiniKit.walletAddress) {
-        setAddress(MiniKit.walletAddress as `0x${string}`);
+      if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
+        setAddress((MiniKit as any).walletAddress as `0x${string}`);
         clearInterval(i);
       }
     }, 1000);
@@ -131,7 +131,6 @@ export default function ClaimSection() {
 
       setLogs("Opening Wallet...");
       
-      // 🟢 FIX 2: Type yahan bhi update kiya
       const txPayload: SendTransactionPayload = {
         transaction: {
           to: AIRDROP_CONTRACT,

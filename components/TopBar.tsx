@@ -9,8 +9,9 @@ export default function TopBar() {
 
   useEffect(() => {
     setDebugId(process.env.NEXT_PUBLIC_APP_ID || "Not Found");
-    if (MiniKit.isInstalled() && MiniKit.walletAddress) {
-      setAddress(MiniKit.walletAddress);
+    // 🟢 FIX: (MiniKit as any) lagaya hai
+    if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
+      setAddress((MiniKit as any).walletAddress);
     }
   }, []);
 
@@ -23,7 +24,6 @@ export default function TopBar() {
     setLoading(true);
 
     try {
-      // 🟢 CHANGE 1: 'commandsAsync' ka use karein (Ye wait karega)
       const res = await MiniKit.commandsAsync.walletAuth({
         nonce: crypto.randomUUID().replace(/-/g, ""),
         requestId: "0",
@@ -31,17 +31,16 @@ export default function TopBar() {
         notBefore: new Date(new Date().getTime() - 24 * 60 * 60 * 1000),
       });
 
-      // 🔍 CHANGE 2: Response structure 'finalPayload' check karein
       if (res?.finalPayload?.status === "success") {
         
-        if (MiniKit.walletAddress) {
-           setAddress(MiniKit.walletAddress);
+        // 🟢 FIX: Yahan bhi (MiniKit as any)
+        if ((MiniKit as any).walletAddress) {
+           setAddress((MiniKit as any).walletAddress);
         } else {
            window.location.reload(); 
         }
 
       } else {
-        // Fail case
         alert("Connection Failed or Cancelled by User.");
         console.log("Full Error:", res);
       }
