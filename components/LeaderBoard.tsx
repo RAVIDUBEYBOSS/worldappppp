@@ -32,12 +32,11 @@ export default function Leaderboard() {
     setDataList([]); // Clear old data
 
     try {
-      // 1. Fetch All Transfer Events (Token Contract se)
-      // Standard ERC20 Event: Transfer(from, to, value)
+      // 1. Fetch All Transfer Events
       const logs = await publicClient.getLogs({
         address: TOKEN_ADDRESS,
         event: parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)'),
-        fromBlock: 'earliest' // Shuru se ab tak ka data
+        fromBlock: 'earliest'
       });
 
       const balances: Record<string, bigint> = {};
@@ -48,15 +47,15 @@ export default function Leaderboard() {
         
         // --- Logic for Holders (Balance Calculation) ---
         if (from && to && value) {
+          // 🟢 FIX: '0n' replaced with 'BigInt(0)' to fix Build Error
           if (from !== "0x0000000000000000000000000000000000000000") {
-            balances[from] = (balances[from] || 0n) - value;
+            balances[from] = (balances[from] || BigInt(0)) - value;
           }
-          balances[to] = (balances[to] || 0n) + value;
+          balances[to] = (balances[to] || BigInt(0)) + value;
 
-          // --- Logic for Claimers (Received from Airdrop Contract) ---
-          // Agar sender Airdrop Contract hai, matlab ye Claim tha
+          // --- Logic for Claimers ---
           if (from.toLowerCase() === AIRDROP_ADDRESS.toLowerCase()) {
-            claims[to] = (claims[to] || 0n) + value;
+            claims[to] = (claims[to] || BigInt(0)) + value;
           }
         }
       });
@@ -65,18 +64,16 @@ export default function Leaderboard() {
       let processedData = [];
 
       if (activeTab === "holders") {
-        // Convert Balances to Array & Sort
         processedData = Object.entries(balances)
-          .filter(([_, bal]) => bal > 0n) // Sirf positive balance wale
+          .filter(([_, bal]) => bal > BigInt(0)) // 🟢 FIX: 0n -> BigInt(0)
           .map(([addr, bal]) => ({
             address: addr,
-            amount: parseFloat(formatUnits(bal, 18)).toFixed(2), // 2 decimal tak
+            amount: parseFloat(formatUnits(bal, 18)).toFixed(2),
             ...generateIdentity(addr)
           }))
-          .sort((a, b) => Number(b.amount) - Number(a.amount)) // Highest First
-          .slice(0, 20); // Top 20
+          .sort((a, b) => Number(b.amount) - Number(a.amount))
+          .slice(0, 20);
       } else {
-        // Convert Claims to Array & Sort
         processedData = Object.entries(claims)
           .map(([addr, bal]) => ({
             address: addr,
@@ -96,7 +93,6 @@ export default function Leaderboard() {
     }
   };
 
-  // Tab change hone par data wapas layenge
   useEffect(() => {
     fetchData();
   }, [activeTab, publicClient]);
