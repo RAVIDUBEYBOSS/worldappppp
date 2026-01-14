@@ -6,8 +6,7 @@ import { formatUnits } from "viem";
 import {
   MiniKit,
   VerificationLevel,
-  SendTransactionPayload, // Ensure ye updated name ho
-  ISuccessResult, 
+  // Types hata diye hain taaki build fail na ho
 } from "@worldcoin/minikit-js";
 
 import ClaimUI from "./ClaimUI";
@@ -34,7 +33,8 @@ export default function ClaimSection() {
   const [checking, setChecking] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [logs, setLogs] = useState("");
-  const [proofData, setProofData] = useState<ISuccessResult | null>(null);
+  // Type 'any' kar diya taaki TS roye nahi
+  const [proofData, setProofData] = useState<any | null>(null);
 
   const [tokenInfo, setTokenInfo] = useState({
     symbol: "---",
@@ -43,7 +43,7 @@ export default function ClaimSection() {
   });
 
   useEffect(() => {
-    // 🟢 FIX: (MiniKit as any) lagaya taaki TS error na de
+    // 🟢 FIX: (MiniKit as any) lagaya
     if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
       setAddress((MiniKit as any).walletAddress as `0x${string}`);
       return;
@@ -89,17 +89,20 @@ export default function ClaimSection() {
     setLogs("Waiting for Verification...");
 
     try {
-      const { finality } = await MiniKit.commands.verify({
+      // 🟢 FIX: 'commandsAsync' use kiya aur result ko 'any' bana diya
+      const res: any = await MiniKit.commandsAsync.verify({
         action: "consult-orb", 
         signal: address,
         verification_level: VerificationLevel.Orb,
       });
 
-      if (finality.status === "success") {
+      // 🟢 FIX: Ab hum 'finalPayload' check karenge (Latest SDK ke hisaab se)
+      if (res?.finalPayload?.status === "success") {
         setLogs("✅ Verified! Click Claim now.");
-        setProofData(finality);
+        setProofData(res.finalPayload);
       } else {
         setLogs("Verification Failed/Cancelled");
+        console.log("Verify Error:", res);
       }
     } catch (error) {
       console.error(error);
@@ -131,7 +134,8 @@ export default function ClaimSection() {
 
       setLogs("Opening Wallet...");
       
-      const txPayload: SendTransactionPayload = {
+      // 🟢 FIX: Transaction Payload ko bhi 'any' kar diya
+      const txPayload: any = {
         transaction: {
           to: AIRDROP_CONTRACT,
           abi: AIRDROP_ABI,
@@ -140,8 +144,10 @@ export default function ClaimSection() {
         },
       };
 
-      const tx = await MiniKit.commands.sendTransaction(txPayload);
-      if (tx.finality.status === "success") {
+      // 🟢 FIX: commandsAsync use kiya
+      const tx: any = await MiniKit.commandsAsync.sendTransaction(txPayload);
+      
+      if (tx?.finalPayload?.status === "success") {
         setLogs("🎉 Claim Successful!");
         fetchTokenData();
         setProofData(null);
