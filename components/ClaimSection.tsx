@@ -6,14 +6,14 @@ import { formatUnits } from "viem";
 import {
   MiniKit,
   VerificationLevel,
-  // Types hata diye hain taaki build fail na ho
+  // Types hata diye taaki build fail na ho
 } from "@worldcoin/minikit-js";
 
-import ClaimUI from "./ClaimUI";
-
+// --- CONTRACT CONFIG ---
 const AIRDROP_CONTRACT = "0xe9EAdb26850e7E08Da443C679e37a99a85a45022" as `0x${string}`;
 const TOKEN_ADDRESS = "0x17B236e31dab6B071a0b51787329f77fEF69c3E6" as `0x${string}`;
 
+// --- ABIS ---
 const AIRDROP_ABI = [
   { name: "claimReward", type: "function", stateMutability: "nonpayable", inputs: [{ name: "_token", type: "address" }, { name: "_signature", type: "bytes" }], outputs: [] },
   { name: "lastClaimTime", type: "function", stateMutability: "view", inputs: [{ name: "", type: "address" }, { name: "", type: "address" }], outputs: [{ type: "uint256" }] },
@@ -30,83 +30,120 @@ export default function ClaimSection() {
 
   const [address, setAddress] = useState<`0x${string}` | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [checking, setChecking] = useState(false);
   const [isPending, setIsPending] = useState(false);
-  const [logs, setLogs] = useState("");
+  const [logs, setLogs] = useState("Loading Reward Info...");
+  
   // Type 'any' kar diya taaki TS roye nahi
   const [proofData, setProofData] = useState<any | null>(null);
 
   const [tokenInfo, setTokenInfo] = useState({
-    symbol: "---",
-    amount: "---",
-    cooldownStr: "---",
+    symbol: "Loading...",
+    amount: "0",
+    decimals: 18,
+    cooldown: 0,
+    isActive: false
   });
 
-  useEffect(() => {
-    // 🟢 FIX: (MiniKit as any) lagaya
-    if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
-      setAddress((MiniKit as any).walletAddress as `0x${string}`);
-      return;
-    }
-    const i = setInterval(() => {
-      if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
-        setAddress((MiniKit as any).walletAddress as `0x${string}`);
-        clearInterval(i);
-      }
-    }, 1000);
-    return () => clearInterval(i);
-  }, []);
-
-  const fetchTokenData = async () => {
-    if (!address || !publicClient) return;
-    setChecking(true);
+  // 1. Fetch Global Token Info (Wallet ki zarurat nahi)
+  const fetchGlobalData = async () => {
+    if (!publicClient) return;
     try {
-      const [lastClaim, config, symbol, decimals] = await Promise.all([
-        publicClient.readContract({ address: AIRDROP_CONTRACT, abi: AIRDROP_ABI, functionName: "lastClaimTime", args: [address, TOKEN_ADDRESS] }),
+      const [config, symbol, decimals] = await Promise.all([
         publicClient.readContract({ address: AIRDROP_CONTRACT, abi: AIRDROP_ABI, functionName: "tokenConfigs", args: [TOKEN_ADDRESS] }),
         publicClient.readContract({ address: TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "symbol" }),
         publicClient.readContract({ address: TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "decimals" }),
       ]);
 
-      if (!config[0]) { setLogs("Token inactive"); return; }
+      if (!config[0]) {
+        setLogs("Airdrop Inactive");
+        setTokenInfo(prev => ({ ...prev, symbol: symbol as string, isActive: false }));
+        return;
+      }
 
       const amount = formatUnits(config[1], Number(decimals));
-      const cooldown = Number(config[2]);
+      
+      setTokenInfo({
+        symbol: symbol as string,
+        amount: parseFloat(amount).toFixed(0), // No decimals in UI for clean look
+        decimals: Number(decimals),
+        cooldown: Number(config[2]),
+        isActive: true
+      });
+      setLogs("Ready to Claim");
 
-      setTokenInfo({ symbol, amount, cooldownStr: `${Math.floor(cooldown / 60)} min` });
-
-      const now = Math.floor(Date.now() / 1000);
-      const remaining = Number(lastClaim) + cooldown - now;
-      setTimeLeft(remaining > 0 ? remaining : 0);
-    } catch (err) { console.error(err); } finally { setChecking(false); }
+    } catch (err) {
+      console.error("Global Fetch Error:", err);
+      setLogs("Network Error");
+    }
   };
 
-  useEffect(() => { if (address) fetchTokenData(); }, [address]);
+  // 2. Fetch User Specific Data (Wait Time)
+  const fetchUserData = async () => {
+    if (!address || !publicClient || !tokenInfo.isActive) return;
+    
+    try {
+      const lastClaim = await publicClient.readContract({ 
+        address: AIRDROP_CONTRACT, 
+        abi: AIRDROP_ABI, 
+        functionName: "lastClaimTime", 
+        args: [address, TOKEN_ADDRESS] 
+      });
+
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = Number(lastClaim) + tokenInfo.cooldown - now;
+      setTimeLeft(remaining > 0 ? remaining : 0);
+      
+    } catch (err) {
+      console.error("User Data Error:", err);
+    }
+  };
+
+  // Initial Load
+  useEffect(() => {
+    fetchGlobalData();
+  }, [publicClient]);
+
+  // Wallet Check
+  useEffect(() => {
+    const checkWallet = () => {
+      if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
+        setAddress((MiniKit as any).walletAddress as `0x${string}`);
+      }
+    };
+    checkWallet();
+    const i = setInterval(checkWallet, 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  // Update TimeLeft when address or tokenInfo changes
+  useEffect(() => {
+    if (address && tokenInfo.isActive) {
+      fetchUserData();
+    }
+  }, [address, tokenInfo.isActive]);
+
 
   const handleVerify = async () => {
     if(!address) return;
     setIsPending(true);
-    setLogs("Waiting for Verification...");
+    setLogs("Verifying ID...");
 
     try {
-      // 🟢 FIX: 'commandsAsync' use kiya aur result ko 'any' bana diya
       const res: any = await MiniKit.commandsAsync.verify({
         action: "consult-orb", 
         signal: address,
         verification_level: VerificationLevel.Orb,
       });
 
-      // 🟢 FIX: Ab hum 'finalPayload' check karenge (Latest SDK ke hisaab se)
       if (res?.finalPayload?.status === "success") {
-        setLogs("✅ Verified! Click Claim now.");
+        setLogs("✅ Verified! Click Claim.");
         setProofData(res.finalPayload);
       } else {
-        setLogs("Verification Failed/Cancelled");
-        console.log("Verify Error:", res);
+        setLogs("Verification Failed");
       }
     } catch (error) {
       console.error(error);
-      setLogs("Error during verification");
+      setLogs("Verify Error");
     } finally {
       setIsPending(false);
     }
@@ -115,10 +152,9 @@ export default function ClaimSection() {
   const handleExecuteClaim = async () => {
     if (!address || !proofData) return;
     setIsPending(true);
+    setLogs("Claiming...");
 
     try {
-      setLogs("Authorizing Signature...");
-      
       const res = await fetch("/api/getSignature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,11 +166,8 @@ export default function ClaimSection() {
       });
 
       const data = await res.json();
-      if (!data.signature) throw new Error("Signature failed");
+      if (!data.signature) throw new Error(data.error || "Sign Failed");
 
-      setLogs("Opening Wallet...");
-      
-      // 🟢 FIX: Transaction Payload ko bhi 'any' kar diya
       const txPayload: any = {
         transaction: {
           to: AIRDROP_CONTRACT,
@@ -144,12 +177,11 @@ export default function ClaimSection() {
         },
       };
 
-      // 🟢 FIX: commandsAsync use kiya
       const tx: any = await MiniKit.commandsAsync.sendTransaction(txPayload);
       
       if (tx?.finalPayload?.status === "success") {
-        setLogs("🎉 Claim Successful!");
-        fetchTokenData();
+        setLogs("🎉 Claimed Successfully!");
+        fetchUserData(); // Reset timer
         setProofData(null);
       } else {
         setLogs("Transaction Failed");
@@ -163,45 +195,57 @@ export default function ClaimSection() {
 
   return (
     <div className="p-4">
+       {/* REWARD CARD - ALWAYS VISIBLE */}
        <div className="w-full bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6 shadow-2xl relative overflow-hidden text-center">
         <div className="absolute top-0 right-0 p-2 opacity-10 text-6xl">🎁</div>
-        <h2 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Daily Airdrop</h2>
+        <h2 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Daily Reward</h2>
+        
         <div className="flex items-center justify-center gap-2">
-            <span className="text-4xl font-black text-white">{tokenInfo.amount}</span>
-            <span className="text-xl font-bold text-yellow-500 mb-1">{tokenInfo.symbol}</span>
+            <span className="text-4xl font-black text-white">
+              {tokenInfo.amount}
+            </span>
+            <span className="text-xl font-bold text-yellow-500 mb-1">
+              {tokenInfo.symbol}
+            </span>
         </div>
-        <p className="text-[10px] text-gray-500 mt-2 font-mono">Status: {logs || "Ready"}</p>
+        
+        <p className={`text-[10px] mt-2 font-mono ${logs.includes("Success") ? "text-green-400" : "text-gray-500"}`}>
+          STATUS: {logs}
+        </p>
       </div>
 
+      {/* BUTTONS - ADDRESS DEPENDENT */}
       {!address && (
-         <button disabled className="w-full py-4 rounded-xl bg-gray-800 text-gray-500 font-bold">
-           Connecting Wallet...
-         </button>
+         <div className="w-full py-4 rounded-xl bg-gray-800 text-gray-500 font-bold text-center border border-gray-700">
+           🔒 Connect Wallet to Claim
+         </div>
       )}
 
       {address && timeLeft > 0 && (
-        <button disabled className="w-full py-4 rounded-xl bg-gray-800 text-gray-500 font-bold border border-gray-700">
-           WAIT {Math.floor(timeLeft / 60)}m {timeLeft % 60}s
+        <button disabled className="w-full py-4 rounded-xl bg-gray-800 text-gray-400 font-bold border border-gray-700 cursor-not-allowed">
+           ⏳ COME BACK IN {Math.floor(timeLeft / 60)}m {timeLeft % 60}s
         </button>
       )}
 
-      {address && timeLeft === 0 && !proofData && (
+      {/* VERIFY BUTTON */}
+      {address && timeLeft === 0 && !proofData && tokenInfo.isActive && (
         <button 
           onClick={handleVerify}
           disabled={isPending}
-          className="w-full py-4 rounded-xl bg-blue-600 text-white font-bold shadow-lg hover:bg-blue-500 transition"
+          className="w-full py-4 rounded-xl bg-blue-600 text-white font-bold shadow-lg hover:bg-blue-500 transition active:scale-95"
         >
-          {isPending ? "Verifying..." : "👁️ VERIFY ID TO UNLOCK"}
+          {isPending ? "Verifying..." : "👁️ VERIFY ID"}
         </button>
       )}
 
-      {address && timeLeft === 0 && proofData && (
+      {/* CLAIM BUTTON */}
+      {address && timeLeft === 0 && proofData && tokenInfo.isActive && (
         <button 
           onClick={handleExecuteClaim}
           disabled={isPending}
-          className="w-full py-4 rounded-xl bg-gradient-to-r from-yellow-600 to-yellow-400 text-black font-black shadow-[0_0_20px_rgba(250,204,21,0.4)] animate-pulse"
+          className="w-full py-4 rounded-xl bg-gradient-to-r from-yellow-600 to-yellow-400 text-black font-black shadow-[0_0_20px_rgba(250,204,21,0.4)] animate-pulse active:scale-95"
         >
-          {isPending ? "Processing..." : "💰 CLAIM REWARD NOW"}
+          {isPending ? "Processing..." : "💰 CLAIM REWARD"}
         </button>
       )}
 

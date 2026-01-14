@@ -5,68 +5,75 @@ import { useEffect, useState } from "react";
 export default function TopBar() {
   const [address, setAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [debugLog, setDebugLog] = useState("Waiting for wallet...");
+  const [statusMsg, setStatusMsg] = useState("");
 
   useEffect(() => {
-    // 🟢 NEW LOGIC: Polling (Baar-baar check karna)
-    // Kabhi kabhi MiniKit inject hone me 1-2 second lagata hai
-    const interval = setInterval(() => {
-      if (MiniKit.isInstalled()) {
-        const addr = (MiniKit as any).walletAddress;
-        if (addr) {
-          setAddress(addr);
-          setDebugLog("✅ Wallet Found!");
-          clearInterval(interval); // Mil gya, ab ruk jao
-        }
+    // 1. Page Load Check
+    if (MiniKit.isInstalled()) {
+      const addr = (MiniKit as any).walletAddress;
+      if (addr) {
+        setAddress(addr);
       }
-    }, 500); // Har aadhe second me check karo
-
-    // 5 second baad band kar dena taaki infinite na chale
-    setTimeout(() => clearInterval(interval), 5000);
-    
-    return () => clearInterval(interval);
+    }
   }, []);
 
   const handleConnect = async () => {
     if (!MiniKit.isInstalled()) {
-      setDebugLog("MiniKit not installed!");
+      setStatusMsg("MiniKit Missing!");
       return;
     }
 
     setLoading(true);
-    setDebugLog("Requesting Sign In...");
+    setStatusMsg("Approving...");
 
     try {
-      const res = await MiniKit.commandsAsync.walletAuth({
+      // 2. Command Bhejo
+      const res: any = await MiniKit.commandsAsync.walletAuth({
         nonce: crypto.randomUUID().replace(/-/g, ""),
         requestId: "0",
         expirationTime: new Date(new Date().getTime() + 7 * 24 * 60 * 60 * 1000),
         notBefore: new Date(new Date().getTime() - 24 * 60 * 60 * 1000),
       });
 
+      // 3. Response ka Operation (Deep Analysis Logic)
       if (res?.finalPayload?.status === "success") {
-        setDebugLog("Auth Success! Fetching Address...");
+        setStatusMsg("Success! Locking wallet...");
         
-        // Thoda wait karke check karo
-        setTimeout(() => {
-          const wallet = (MiniKit as any).walletAddress;
-          if (wallet) {
-            setAddress(wallet);
-            setDebugLog("Connected!");
-          } else {
-            // Agar abhi bhi null hai, to Reload karo
-            setDebugLog("Success but address pending. Reloading...");
-            window.location.reload();
-          }
-        }, 1000);
+        // METHOD A: Kya MiniKit update ho gaya?
+        if ((MiniKit as any).walletAddress) {
+           setAddress((MiniKit as any).walletAddress);
+           setLoading(false);
+           return;
+        }
+
+        // METHOD B: Kya address response ke andar hai? (Check common paths)
+        // Kuch versions me address 'finalPayload' ke andar hota hai
+        const payloadAddr = res.finalPayload.address || res.finalPayload.account;
+        if (payloadAddr) {
+           setAddress(payloadAddr);
+           setLoading(false);
+           return;
+        }
+
+        // METHOD C: Brahmastra (Instant Reload) ⚡
+        // Agar success hai par address nahi dikh raha, matlab sync issue hai.
+        // Reload karne se MiniKit fresh start lega aur address utha lega.
+        setStatusMsg("Syncing... (Reloading)");
+        window.location.reload();
 
       } else {
-        setDebugLog(`Failed: ${res?.finalPayload?.status}`);
+        // Agar fail hua
+        setStatusMsg(`Auth Failed: ${res?.finalPayload?.status}`);
+        setLoading(false);
       }
 
     } catch (error: any) {
-      setDebugLog(`Error: ${error.message}`);
-    } finally {
+      // Crash report
+      setStatusMsg(`Error: ${error.message}`);
+      // Agar crash response object hai to usse print karo
+      if (error.finalPayload) {
+         setStatusMsg(`ErrStatus: ${error.finalPayload.status}`);
+      }
       setLoading(false);
     }
   };
@@ -78,10 +85,12 @@ export default function TopBar() {
   return (
     <div className="flex flex-col bg-black border-b border-gray-800">
       
-      {/* Debug Strip */}
-      <div className="bg-gray-900 text-[10px] text-gray-500 p-1 text-center font-mono">
-        STATUS: {debugLog}
-      </div>
+      {/* 🟢 STATUS BAR (Sirf tab dikhega jab process chal raha ho) */}
+      {statusMsg && (
+        <div className="bg-gray-900 text-[9px] text-yellow-500 text-center py-1 font-mono animate-pulse">
+           LOG: {statusMsg}
+        </div>
+      )}
 
       <div className="flex justify-between items-center px-4 py-3">
         <button className="text-[10px] font-bold bg-gradient-to-r from-yellow-600 to-yellow-400 text-black px-3 py-1.5 rounded-full hover:brightness-110">
