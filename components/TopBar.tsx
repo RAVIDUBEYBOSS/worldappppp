@@ -5,15 +5,26 @@ import { useEffect, useState } from "react";
 export default function TopBar() {
   const [address, setAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Ye variable screen par error dikhayega
-  const [debugLog, setDebugLog] = useState("Ready to connect...");
+  const [debugLog, setDebugLog] = useState("Waiting for wallet...");
 
   useEffect(() => {
-    // Page load hote hi check karo
-    if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
-      setAddress((MiniKit as any).walletAddress);
-      setDebugLog("Address found on load!");
-    }
+    // 🟢 NEW LOGIC: Polling (Baar-baar check karna)
+    // Kabhi kabhi MiniKit inject hone me 1-2 second lagata hai
+    const interval = setInterval(() => {
+      if (MiniKit.isInstalled()) {
+        const addr = (MiniKit as any).walletAddress;
+        if (addr) {
+          setAddress(addr);
+          setDebugLog("✅ Wallet Found!");
+          clearInterval(interval); // Mil gya, ab ruk jao
+        }
+      }
+    }, 500); // Har aadhe second me check karo
+
+    // 5 second baad band kar dena taaki infinite na chale
+    setTimeout(() => clearInterval(interval), 5000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const handleConnect = async () => {
@@ -23,10 +34,9 @@ export default function TopBar() {
     }
 
     setLoading(true);
-    setDebugLog("Requesting Wallet Auth...");
+    setDebugLog("Requesting Sign In...");
 
     try {
-      // 1. Command Bhejo
       const res = await MiniKit.commandsAsync.walletAuth({
         nonce: crypto.randomUUID().replace(/-/g, ""),
         requestId: "0",
@@ -34,32 +44,28 @@ export default function TopBar() {
         notBefore: new Date(new Date().getTime() - 24 * 60 * 60 * 1000),
       });
 
-      // 2. Response ko screen par print karo
-      setDebugLog(`Status: ${res?.finalPayload?.status}`);
-
       if (res?.finalPayload?.status === "success") {
+        setDebugLog("Auth Success! Fetching Address...");
         
-        // 3. Address Check Karo
-        const wallet = (MiniKit as any).walletAddress;
-        
-        if (wallet) {
-          setAddress(wallet);
-          setDebugLog("Connected successfully!");
-        } else {
-          setDebugLog("Auth Success but Address is NULL. Retrying...");
-          // Agar success hai par address null hai, to reload safe hai
-          setTimeout(() => {
-             window.location.reload();
-          }, 1000);
-        }
+        // Thoda wait karke check karo
+        setTimeout(() => {
+          const wallet = (MiniKit as any).walletAddress;
+          if (wallet) {
+            setAddress(wallet);
+            setDebugLog("Connected!");
+          } else {
+            // Agar abhi bhi null hai, to Reload karo
+            setDebugLog("Success but address pending. Reloading...");
+            window.location.reload();
+          }
+        }, 1000);
 
       } else {
-        // Agar fail hua to reason dikhao
-        setDebugLog(`Failed: ${JSON.stringify(res)}`);
+        setDebugLog(`Failed: ${res?.finalPayload?.status}`);
       }
 
     } catch (error: any) {
-      setDebugLog(`CRASH: ${error.message}`);
+      setDebugLog(`Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -72,9 +78,9 @@ export default function TopBar() {
   return (
     <div className="flex flex-col bg-black border-b border-gray-800">
       
-      {/* 🔴 DEBUG BOX: Error yahan dikhega */}
-      <div className="bg-red-900/30 text-[10px] text-red-200 p-2 text-center font-mono break-all border-b border-red-900">
-        LOG: {debugLog}
+      {/* Debug Strip */}
+      <div className="bg-gray-900 text-[10px] text-gray-500 p-1 text-center font-mono">
+        STATUS: {debugLog}
       </div>
 
       <div className="flex justify-between items-center px-4 py-3">
