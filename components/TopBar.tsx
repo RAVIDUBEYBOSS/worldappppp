@@ -5,31 +5,28 @@ import { useEffect, useState } from "react";
 export default function TopBar() {
   const [address, setAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Ye variable screen par error dikhayega
+  const [debugLog, setDebugLog] = useState("Ready to connect...");
 
   useEffect(() => {
     // Page load hote hi check karo
-    checkWallet();
-  }, []);
-
-  const checkWallet = () => {
     if (MiniKit.isInstalled() && (MiniKit as any).walletAddress) {
       setAddress((MiniKit as any).walletAddress);
-      return true;
+      setDebugLog("Address found on load!");
     }
-    return false;
-  };
+  }, []);
 
   const handleConnect = async () => {
     if (!MiniKit.isInstalled()) {
-      alert("MiniKit not installed!");
+      setDebugLog("MiniKit not installed!");
       return;
     }
 
     setLoading(true);
+    setDebugLog("Requesting Wallet Auth...");
 
     try {
-      // 1. Command bhejo
-      // Async use kar rahe hain taaki user ke wapas aane ka wait kare
+      // 1. Command Bhejo
       const res = await MiniKit.commandsAsync.walletAuth({
         nonce: crypto.randomUUID().replace(/-/g, ""),
         requestId: "0",
@@ -37,29 +34,33 @@ export default function TopBar() {
         notBefore: new Date(new Date().getTime() - 24 * 60 * 60 * 1000),
       });
 
-      // 2. Response aate hi Debug Alert dikhao (Isse pata chalega kya aaya)
-      // alert(`Response: ${JSON.stringify(res)}`); 
+      // 2. Response ko screen par print karo
+      setDebugLog(`Status: ${res?.finalPayload?.status}`);
 
-      // 3. AGGRESSIVE CHECKING (Polling)
-      // Hum wait nahi karenge ki response sahi hai ya nahi, hum seedha address check karenge
-      let attempts = 0;
-      const interval = setInterval(() => {
-        attempts++;
-        const found = checkWallet();
+      if (res?.finalPayload?.status === "success") {
         
-        if (found) {
-          clearInterval(interval); // Mil gaya! Ruko mat.
-          setLoading(false);
-        } else if (attempts > 5) {
-          // 5 baar check kiya, nahi mila -> Reload kar do
-          clearInterval(interval);
-          window.location.reload(); 
+        // 3. Address Check Karo
+        const wallet = (MiniKit as any).walletAddress;
+        
+        if (wallet) {
+          setAddress(wallet);
+          setDebugLog("Connected successfully!");
+        } else {
+          setDebugLog("Auth Success but Address is NULL. Retrying...");
+          // Agar success hai par address null hai, to reload safe hai
+          setTimeout(() => {
+             window.location.reload();
+          }, 1000);
         }
-      }, 1000); // Har 1 second me check karo
+
+      } else {
+        // Agar fail hua to reason dikhao
+        setDebugLog(`Failed: ${JSON.stringify(res)}`);
+      }
 
     } catch (error: any) {
-      console.error(error);
-      alert(`Error: ${error.message}`);
+      setDebugLog(`CRASH: ${error.message}`);
+    } finally {
       setLoading(false);
     }
   };
@@ -70,6 +71,12 @@ export default function TopBar() {
 
   return (
     <div className="flex flex-col bg-black border-b border-gray-800">
+      
+      {/* 🔴 DEBUG BOX: Error yahan dikhega */}
+      <div className="bg-red-900/30 text-[10px] text-red-200 p-2 text-center font-mono break-all border-b border-red-900">
+        LOG: {debugLog}
+      </div>
+
       <div className="flex justify-between items-center px-4 py-3">
         <button className="text-[10px] font-bold bg-gradient-to-r from-yellow-600 to-yellow-400 text-black px-3 py-1.5 rounded-full hover:brightness-110">
           📢 BOOK AD
