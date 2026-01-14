@@ -26,7 +26,7 @@ export default function ToolsDashboard() {
         
         {activeView === "home" && (
           <div className="space-y-4 animate-fade-in">
-            <HeroBanner />
+            <AdBannerTop />
             <AdWallSplit />
 
             <div className="px-4 mt-6">
