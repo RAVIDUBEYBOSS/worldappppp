@@ -1,0 +1,8 @@
+name = "tech-worldapp"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tech-worldapp-db"
+database_id = "e9103d8e-2f9e-43e0-ae48-195eb53f12a8"

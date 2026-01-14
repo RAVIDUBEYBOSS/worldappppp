@@ -1,15 +1,24 @@
 import { http, createConfig } from 'wagmi'
-import { worldchain, optimism } from 'wagmi/chains'
-import { injected } from 'wagmi/connectors' // 👈 Ye Import Zaruri hai
+import { defineChain } from 'viem'
+import { injected } from 'wagmi/connectors'
+import { type Chain } from 'viem'
+
+export const worldChain = defineChain({
+  id: 480,
+  name: 'World Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://worldchain-mainnet.g.alchemy.com/public'] },
+  },
+  blockExplorers: {
+    default: { name: 'Worldscan', url: 'https://worldscan.org' },
+  },
+}) as Chain
 
 export const config = createConfig({
-  chains: [worldchain, optimism],
-  // 🟢 Ye line batati hai ki Pop-up wala connector use karo
-  connectors: [
-    injected(), 
-  ],
+  chains: [worldChain],
+  connectors: [injected()],
   transports: {
-    [worldchain.id]: http(),
-    [optimism.id]: http(),
+    [worldChain.id]: http(),
   },
 })
