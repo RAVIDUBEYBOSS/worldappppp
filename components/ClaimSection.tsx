@@ -6,17 +6,16 @@ import { formatUnits } from "viem";
 import {
   MiniKit,
   VerificationLevel,
-  ISendTransactionPayload,
-  ISuccessResult, // Import added
+  // 🟢 FIX 1: 'ISendTransactionPayload' ka naam badal kar 'SendTransactionPayload' kar diya
+  SendTransactionPayload, 
+  ISuccessResult, 
 } from "@worldcoin/minikit-js";
 
 import ClaimUI from "./ClaimUI";
 
-// CONTRACT ADDRESSES (Ensure ye sahi ho Optimism/World Chain par)
 const AIRDROP_CONTRACT = "0xe9EAdb26850e7E08Da443C679e37a99a85a45022" as `0x${string}`;
 const TOKEN_ADDRESS = "0x17B236e31dab6B071a0b51787329f77fEF69c3E6" as `0x${string}`;
 
-// ABIs
 const AIRDROP_ABI = [
   { name: "claimReward", type: "function", stateMutability: "nonpayable", inputs: [{ name: "_token", type: "address" }, { name: "_signature", type: "bytes" }], outputs: [] },
   { name: "lastClaimTime", type: "function", stateMutability: "view", inputs: [{ name: "", type: "address" }, { name: "", type: "address" }], outputs: [{ type: "uint256" }] },
@@ -36,8 +35,6 @@ export default function ClaimSection() {
   const [checking, setChecking] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [logs, setLogs] = useState("");
-  
-  // 🔥 NEW STATE: Proof store karne ke liye
   const [proofData, setProofData] = useState<ISuccessResult | null>(null);
 
   const [tokenInfo, setTokenInfo] = useState({
@@ -46,7 +43,6 @@ export default function ClaimSection() {
     cooldownStr: "---",
   });
 
-  // 1. AUTO CONNECT
   useEffect(() => {
     if (MiniKit.isInstalled() && MiniKit.walletAddress) {
       setAddress(MiniKit.walletAddress as `0x${string}`);
@@ -61,7 +57,6 @@ export default function ClaimSection() {
     return () => clearInterval(i);
   }, []);
 
-  // 2. FETCH DATA
   const fetchTokenData = async () => {
     if (!address || !publicClient) return;
     setChecking(true);
@@ -88,7 +83,6 @@ export default function ClaimSection() {
 
   useEffect(() => { if (address) fetchTokenData(); }, [address]);
 
-  // 3. HANDLE VERIFY (STEP 1)
   const handleVerify = async () => {
     if(!address) return;
     setIsPending(true);
@@ -97,13 +91,13 @@ export default function ClaimSection() {
     try {
       const { finality } = await MiniKit.commands.verify({
         action: "consult-orb", 
-        signal: address, // Signal me address bhej rahe hain security ke liye
+        signal: address,
         verification_level: VerificationLevel.Orb,
       });
 
       if (finality.status === "success") {
         setLogs("✅ Verified! Click Claim now.");
-        setProofData(finality); // Proof save kar liya
+        setProofData(finality);
       } else {
         setLogs("Verification Failed/Cancelled");
       }
@@ -115,7 +109,6 @@ export default function ClaimSection() {
     }
   };
 
-  // 4. HANDLE CLAIM (STEP 2 - Tabhi chalega jab Proof hoga)
   const handleExecuteClaim = async () => {
     if (!address || !proofData) return;
     setIsPending(true);
@@ -123,14 +116,13 @@ export default function ClaimSection() {
     try {
       setLogs("Authorizing Signature...");
       
-      // Backend call
       const res = await fetch("/api/getSignature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userAddress: address,
           tokenAddress: TOKEN_ADDRESS,
-          proof: proofData, // Saved proof bhej rahe hain
+          proof: proofData,
         }),
       });
 
@@ -138,7 +130,9 @@ export default function ClaimSection() {
       if (!data.signature) throw new Error("Signature failed");
 
       setLogs("Opening Wallet...");
-      const txPayload: ISendTransactionPayload = {
+      
+      // 🟢 FIX 2: Type yahan bhi update kiya
+      const txPayload: SendTransactionPayload = {
         transaction: {
           to: AIRDROP_CONTRACT,
           abi: AIRDROP_ABI,
@@ -151,7 +145,7 @@ export default function ClaimSection() {
       if (tx.finality.status === "success") {
         setLogs("🎉 Claim Successful!");
         fetchTokenData();
-        setProofData(null); // Reset proof after claim
+        setProofData(null);
       } else {
         setLogs("Transaction Failed");
       }
@@ -162,10 +156,8 @@ export default function ClaimSection() {
     }
   };
 
-  // 5. UI RENDER (Buttons Logic)
   return (
     <div className="p-4">
-      {/* Hum purana ClaimUI use kar rahe hain, par buttons override karenge manually yahan better control ke liye */}
        <div className="w-full bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6 shadow-2xl relative overflow-hidden text-center">
         <div className="absolute top-0 right-0 p-2 opacity-10 text-6xl">🎁</div>
         <h2 className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Daily Airdrop</h2>
@@ -176,23 +168,18 @@ export default function ClaimSection() {
         <p className="text-[10px] text-gray-500 mt-2 font-mono">Status: {logs || "Ready"}</p>
       </div>
 
-      {/* --- BUTTON LOGIC --- */}
-      
-      {/* Case A: Wallet Connect nahi hai */}
       {!address && (
          <button disabled className="w-full py-4 rounded-xl bg-gray-800 text-gray-500 font-bold">
            Connecting Wallet...
          </button>
       )}
 
-      {/* Case B: Cooldown chal raha hai */}
       {address && timeLeft > 0 && (
         <button disabled className="w-full py-4 rounded-xl bg-gray-800 text-gray-500 font-bold border border-gray-700">
            WAIT {Math.floor(timeLeft / 60)}m {timeLeft % 60}s
         </button>
       )}
 
-      {/* Case C: Ready hai, par Verify nahi kiya (STEP 1) */}
       {address && timeLeft === 0 && !proofData && (
         <button 
           onClick={handleVerify}
@@ -203,7 +190,6 @@ export default function ClaimSection() {
         </button>
       )}
 
-      {/* Case D: Verify ho gaya, ab Claim karo (STEP 2) */}
       {address && timeLeft === 0 && proofData && (
         <button 
           onClick={handleExecuteClaim}
