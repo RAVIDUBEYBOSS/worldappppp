@@ -1,42 +1,50 @@
-export const runtime = 'edge'; 
+import { NextRequest, NextResponse } from "next/server";
+import {
+  Wallet,
+  keccak256,
+  solidityPacked,
+  getBytes
+} from "ethers";
 
-import { NextResponse } from "next/server";
-import { encodePacked, keccak256 } from "viem"; 
-import { privateKeyToAccount } from "viem/accounts";
+const PRIVATE_KEY = process.env.SIGNER_PRIVATE_KEY!;
 
-const WORLD_CHAIN_ID = 480; 
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { userAddress, tokenAddress, nonce } = await req.json();
+    const body = await req.json();
+    const { userAddress, tokenAddress, nonce } = body;
 
-    // Setup Signer
-    let privateKey = process.env.SIGNER_PRIVATE_KEY;
-    if (!privateKey) return NextResponse.json({ error: "Key Missing" }, { status: 500 });
-    
-    if (!privateKey.startsWith("0x")) privateKey = `0x${privateKey.trim()}`;
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    if (!userAddress || !tokenAddress || nonce === undefined) {
+      return NextResponse.json(
+        { error: "Missing parameters" },
+        { status: 400 }
+      );
+    }
+
+    if (!PRIVATE_KEY) {
+      return NextResponse.json(
+        { error: "Signer misconfigured" },
+        { status: 500 }
+      );
+    }
+
+    const chainId = 480;
 
     const messageHash = keccak256(
-      encodePacked(
-        ["address", "address", "uint256", "uint256"], 
-        [
-          userAddress as `0x${string}`, 
-          tokenAddress as `0x${string}`, 
-          BigInt(nonce),      
-          BigInt(WORLD_CHAIN_ID)
-        ]
+      solidityPacked(
+        ["address", "address", "uint256", "uint256"],
+        [userAddress, tokenAddress, nonce, chainId]
       )
     );
 
-    const signature = await account.signMessage({
-      message: { raw: messageHash }
-    });
-
+    const wallet = new Wallet(PRIVATE_KEY);
+    const signature = await wallet.signMessage(getBytes(messageHash));
     return NextResponse.json({ signature });
 
   } catch (error: any) {
-    console.error("Backend Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Sign error:", error);
+    return NextResponse.json(
+      { error: error.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
